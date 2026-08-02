@@ -123,30 +123,27 @@ type kubernetesNvidiaSMIRunner struct {
 func (r *kubernetesNvidiaSMIRunner) Run(ctx context.Context, command string, targets []Target) (map[string]string, error) {
 	outputs := make(map[string]string)
 	for _, target := range targets {
-		pods, err := internalK8s.GetDaemonSetPods(ctx, r.client, r.daemonSet, r.namespace, target.HostName)
+		pod, err := internalK8s.GetDaemonSetPod(ctx, r.client, r.daemonSet, r.namespace, target.HostName)
 		if err != nil {
 			return nil, err
 		}
-
-		switch len(pods.Items) {
-		case 0:
+		if pod == nil {
 			klog.Infof("no %s on %s node", r.daemonSet, target.HostName)
-		case 1:
-			output, err := internalK8s.ExecInPod(
-				ctx,
-				r.client,
-				r.config,
-				pods.Items[0].Name,
-				r.namespace,
-				strings.Fields(command),
-			)
-			if err != nil {
-				return nil, fmt.Errorf("failed to query NVL partition ID: %w", err)
-			}
-			outputs[target.HostName] = output.String()
-		default:
-			return nil, fmt.Errorf("expected 1 %s pod, got %d", r.daemonSet, len(pods.Items))
+			continue
 		}
+
+		output, err := internalK8s.ExecInPod(
+			ctx,
+			r.client,
+			r.config,
+			pod.Name,
+			r.namespace,
+			strings.Fields(command),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query NVL partition ID: %w", err)
+		}
+		outputs[target.HostName] = output.String()
 	}
 
 	return outputs, nil

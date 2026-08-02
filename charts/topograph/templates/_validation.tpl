@@ -29,6 +29,32 @@
   {{- fail "env.KUBE_BURST is managed by the chart; configure kubeClient.burst instead" }}
 {{- end }}
 
+{{- if eq .Values.provider.name "lldp-k8s" }}
+{{- $params := default dict .Values.provider.params }}
+{{- $interfaces := default (list) (get $params "interfaces") }}
+{{- $interfaceRegex := trim (toString (get $params "interfaceRegex")) }}
+{{- $railID := trim (toString (get $params "railID")) }}
+{{- if and (gt (len $interfaces) 0) (ne $interfaceRegex "") }}
+  {{- fail "provider.params.interfaces and provider.params.interfaceRegex are mutually exclusive" }}
+{{- end }}
+{{- if and (ne $railID "") (eq $interfaceRegex "") }}
+  {{- fail "provider.params.railID requires provider.params.interfaceRegex" }}
+{{- end }}
+{{- end }}
+
+{{- if .Values.nodeDataBroker.nicRailsConfigMap.gpuMapping.enabled }}
+{{- $params := default dict .Values.provider.params }}
+{{- if not .Values.nodeDataBroker.enabled }}
+  {{- fail "nodeDataBroker.nicRailsConfigMap.gpuMapping.enabled=true requires nodeDataBroker.enabled=true" }}
+{{- end }}
+{{- if ne .Values.provider.name "lldp-k8s" }}
+  {{- fail "nodeDataBroker.nicRailsConfigMap.gpuMapping.enabled=true requires provider.name=lldp-k8s" }}
+{{- end }}
+{{- if eq (trim (toString (get $params "railID"))) "" }}
+  {{- fail "nodeDataBroker.nicRailsConfigMap.gpuMapping.enabled=true requires provider.params.railID" }}
+{{- end }}
+{{- end }}
+
 {{- if or (eq .Values.provider.name "infiniband-k8s") (eq .Values.provider.name "infiniband-bm") (eq .Values.provider.name "dra") }}
 {{- $params := default dict .Values.provider.params }}
 {{- $acceleratorValue := get $params "accelerator" }}

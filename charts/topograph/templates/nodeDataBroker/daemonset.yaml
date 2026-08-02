@@ -83,6 +83,16 @@ spec:
             - name: config-volume
               mountPath: /etc/topograph
               readOnly: true
+            {{- if eq (include "nodeDataBroker.nicRailsEnabled" .) "true" }}
+            - name: host-sys-class-net
+              mountPath: /sys/class/net
+              readOnly: true
+            {{- end }}
+            {{- if eq (include "nodeDataBroker.gpuMappingEnabled" .) "true" }}
+            - name: host-sys-class-infiniband
+              mountPath: /sys/class/infiniband
+              readOnly: true
+            {{- end }}
             {{- range $configMapMounts }}
             - name: {{ include "nodeDataBroker.configMapMountVolumeName" (dict "name" .name) }}
               mountPath: {{ required "nodeDataBroker.configMapMounts[].mountPath is required" .mountPath | quote }}
@@ -99,6 +109,18 @@ spec:
           configMap:
             defaultMode: 420
             name: {{ include "nodeDataBroker.fullname" . }}
+        {{- if eq (include "nodeDataBroker.nicRailsEnabled" .) "true" }}
+        - name: host-sys-class-net
+          hostPath:
+            path: /sys/class/net
+            type: Directory
+        {{- end }}
+        {{- if eq (include "nodeDataBroker.gpuMappingEnabled" .) "true" }}
+        - name: host-sys-class-infiniband
+          hostPath:
+            path: /sys/class/infiniband
+            type: Directory
+        {{- end }}
         {{- range $configMapMounts }}
         - name: {{ include "nodeDataBroker.configMapMountVolumeName" (dict "name" .name) }}
           configMap:

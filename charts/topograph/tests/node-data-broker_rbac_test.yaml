@@ -71,6 +71,58 @@ tests:
       - hasDocuments:
           count: 0
 
+  - it: grants patch access only to the configured NIC rails ConfigMap
+    templates:
+      - templates/nodeDataBroker/rbac.yaml
+    set:
+      provider:
+        name: lldp-k8s
+        params:
+          interfaceRegex: '^eth_r([0-9]+)_p[0-9]+$'
+          railID: 'rail$1'
+      nodeDataBroker:
+        nicRailsConfigMap:
+          name: custom-nic-rails
+    documentIndex: 2
+    asserts:
+      - equal:
+          path: kind
+          value: Role
+      - equal:
+          path: metadata.name
+          value: chart-ci-topograph-node-data-broker-nic-rails
+      - equal:
+          path: metadata.namespace
+          value: topograph
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [configmaps]
+            resourceNames: [custom-nic-rails]
+            verbs: [patch]
+
+  - it: binds NIC rail access to the node data broker service account
+    templates:
+      - templates/nodeDataBroker/rbac.yaml
+    set:
+      provider:
+        name: lldp-k8s
+        params:
+          interfaceRegex: '^eth_r([0-9]+)_p[0-9]+$'
+          railID: 'rail$1'
+    documentIndex: 3
+    asserts:
+      - equal:
+          path: kind
+          value: RoleBinding
+      - equal:
+          path: roleRef.name
+          value: chart-ci-topograph-node-data-broker-nic-rails
+      - equal:
+          path: subjects[0].name
+          value: chart-ci-topograph-node-data-broker
+
   - it: grants pods/exec for explicitly configured infiniband-k8s nvidia-smi discovery
     templates:
       - templates/nodeDataBroker/rbac.yaml
@@ -106,6 +158,40 @@ tests:
             apiGroups: [""]
             resources: [pods]
             verbs: [get, list]
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [pods/exec]
+            verbs: [create]
+
+  - it: grants GPU Operator pod exec for GPU-to-NIC mapping
+    templates:
+      - templates/nodeDataBroker/rbac.yaml
+    set:
+      provider:
+        name: lldp-k8s
+        params:
+          interfaceRegex: '^eth_r([0-9]+)_p[0-9]+$'
+          railID: 'rail$1'
+      nodeDataBroker:
+        nicRailsConfigMap:
+          gpuMapping:
+            enabled: true
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: [apps]
+            resources: [daemonsets]
+            verbs: [get]
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [pods]
+            verbs: [list]
       - contains:
           path: rules
           content:

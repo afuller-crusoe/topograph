@@ -6,12 +6,78 @@
 package k8s
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/fake"
 )
+
+func TestGetDaemonSetPod(t *testing.T) {
+	controller := true
+	ds := &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "gpu-plugin",
+			Namespace: "gpu-operator",
+			UID:       types.UID("gpu-plugin-uid"),
+		},
+		Spec: appsv1.DaemonSetSpec{Selector: &metav1.LabelSelector{
+			MatchLabels: map[string]string{"app": "gpu-plugin"},
+			MatchExpressions: []metav1.LabelSelectorRequirement{{
+				Key:      "track",
+				Operator: metav1.LabelSelectorOpIn,
+				Values:   []string{"stable"},
+			}},
+		}},
+	}
+	owner := metav1.OwnerReference{
+		APIVersion: "apps/v1",
+		Kind:       "DaemonSet",
+		Name:       ds.Name,
+		UID:        ds.UID,
+		Controller: &controller,
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "gpu-plugin-node-1",
+			Namespace:       "gpu-operator",
+			Labels:          map[string]string{"app": "gpu-plugin", "track": "stable"},
+			OwnerReferences: []metav1.OwnerReference{owner},
+		},
+		Spec: corev1.PodSpec{NodeName: "node-1"},
+	}
+	unowned := pod.DeepCopy()
+	unowned.Name = "unowned-node-1"
+	unowned.OwnerReferences = nil
+	wrongExpression := pod.DeepCopy()
+	wrongExpression.Name = "gpu-plugin-canary-node-1"
+	wrongExpression.Labels["track"] = "canary"
+	client := fake.NewSimpleClientset(ds, pod, unowned, wrongExpression)
+
+	actual, err := GetDaemonSetPod(context.Background(), client, "gpu-plugin", "gpu-operator", "node-1")
+	require.NoError(t, err)
+	require.Equal(t, pod.Name, actual.Name)
+
+	unownedClient := fake.NewSimpleClientset(ds, unowned)
+	actual, err = GetDaemonSetPod(context.Background(), unownedClient, "gpu-plugin", "gpu-operator", "node-1")
+	require.NoError(t, err)
+	require.Nil(t, actual)
+
+	noPodClient := fake.NewSimpleClientset(ds)
+	actual, err = GetDaemonSetPod(context.Background(), noPodClient, "gpu-plugin", "gpu-operator", "node-2")
+	require.NoError(t, err)
+	require.Nil(t, actual)
+
+	duplicate := pod.DeepCopy()
+	duplicate.Name = "gpu-plugin-node-1-duplicate"
+	duplicateClient := fake.NewSimpleClientset(ds, pod, duplicate)
+	_, err = GetDaemonSetPod(context.Background(), duplicateClient, "gpu-plugin", "gpu-operator", "node-1")
+	require.ErrorContains(t, err, "expected 1 gpu-plugin pod on node node-1, got 2")
+}
 
 func TestIsPodReady(t *testing.T) {
 	testCases := []struct {

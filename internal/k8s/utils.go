@@ -85,15 +85,48 @@ func GetDaemonSetPods(ctx context.Context, client kubernetes.Interface, name, na
 	if err != nil {
 		return nil, err
 	}
+	selector, err := metav1.LabelSelectorAsSelector(ds.Spec.Selector)
+	if err != nil {
+		return nil, fmt.Errorf("invalid selector for DaemonSet %s/%s: %w", namespace, name, err)
+	}
 
 	opt := metav1.ListOptions{
-		LabelSelector: labels.Set(ds.Spec.Selector.MatchLabels).String(),
+		LabelSelector: selector.String(),
 	}
 	if len(nodename) != 0 {
 		opt.FieldSelector = "spec.nodeName=" + nodename
 	}
 
-	return client.CoreV1().Pods(namespace).List(ctx, opt)
+	pods, err := client.CoreV1().Pods(namespace).List(ctx, opt)
+	if err != nil {
+		return nil, err
+	}
+
+	owned := make([]corev1.Pod, 0, len(pods.Items))
+	for index := range pods.Items {
+		if metav1.IsControlledBy(&pods.Items[index], ds) {
+			owned = append(owned, pods.Items[index])
+		}
+	}
+	pods.Items = owned
+	return pods, nil
+}
+
+// GetDaemonSetPod returns the single pod owned by the named DaemonSet on a
+// node. A nil pod and nil error means the DaemonSet has no pod on that node.
+func GetDaemonSetPod(ctx context.Context, client kubernetes.Interface, name, namespace, nodename string) (*corev1.Pod, error) {
+	pods, err := GetDaemonSetPods(ctx, client, name, namespace, nodename)
+	if err != nil {
+		return nil, err
+	}
+	switch len(pods.Items) {
+	case 0:
+		return nil, nil
+	case 1:
+		return &pods.Items[0], nil
+	default:
+		return nil, fmt.Errorf("expected 1 %s pod on node %s, got %d", name, nodename, len(pods.Items))
+	}
 }
 
 func ExecInPod(ctx context.Context, client kubernetes.Interface, config *rest.Config, name, namespace string, cmd []string) (*bytes.Buffer, error) {
